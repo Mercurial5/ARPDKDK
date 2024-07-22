@@ -5,11 +5,11 @@
 #include <rte_hash.h>
 #include <rte_jhash.h>
 
-#include "rte_arp.h"
+#include "arp_cache.h"
 
-struct rte_arp_table*
-rte_arp_table_init(int entries) {
-    struct rte_arp_table* arp_table = malloc(sizeof(struct rte_arp_table));
+struct arp_cache_table*
+arp_cache_table_init(int entries) {
+    struct arp_cache_table* arp_table = malloc(sizeof(struct arp_cache_table));
     
     struct rte_hash_parameters parameters = { 0 };
     parameters.name = "arp_table";
@@ -25,11 +25,11 @@ rte_arp_table_init(int entries) {
 }
 
 struct rte_ether_addr*
-rte_arp_lookup(struct rte_arp_table* arp_table, uint32_t ipv4) {
+arp_cache_lookup(struct arp_cache_table* arp_table, uint32_t ipv4) {
     struct rte_ether_addr* addr;
     int result = rte_hash_lookup_data(arp_table->table, &ipv4, (void**)&addr);
     if (result < 0) {
-       printf("Failed to lookup data: %d\n", result);
+       // printf("Failed to lookup data: %d\n", result);
        return NULL;
     }
 
@@ -37,7 +37,7 @@ rte_arp_lookup(struct rte_arp_table* arp_table, uint32_t ipv4) {
 }
 
 struct rte_mbuf*
-rte_arp_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t sipv4, uint32_t tipv4) {
+arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t sipv4, uint32_t tipv4) {
     struct rte_mbuf *pkt = rte_pktmbuf_alloc(mempool);
     if (pkt == NULL) {
         printf("Failed to allocate an mbuf\n");
@@ -60,7 +60,7 @@ rte_arp_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t si
     arp_hdr = (struct rte_arp_hdr *) (eth_hdr + 1);
 
     // arp_hdr->arp_hardware = RTE_ARP_HRD_ETHER;
-    arp_hdr->arp_hardware = 256;
+    arp_hdr->arp_hardware = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
 
     // arp_hdr->arp_protocol = RTE_ETHER_TYPE_IPV4;
     arp_hdr->arp_protocol = 8;
@@ -98,11 +98,11 @@ rte_arp_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t si
 }
 
 int
-rte_arp_consume_mbuf(struct rte_arp_table* arp_table, struct rte_mbuf* mbuf) {
+arp_cache_consume_mbuf(struct arp_cache_table* arp_table, struct rte_mbuf* mbuf) {
     struct rte_ether_hdr* eth_hdr;
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
     if (eth_hdr->ether_type != 1544) {
-        printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
+        // printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
         return 0;
     }
 
@@ -110,7 +110,7 @@ rte_arp_consume_mbuf(struct rte_arp_table* arp_table, struct rte_mbuf* mbuf) {
     struct rte_arp_ipv4 arp_data = arp_hdr->arp_data;
 
     if (arp_hdr->arp_opcode == 256) {
-        printf("Given ARP mbuf is request mbuf, not response\n");
+        // printf("Given ARP mbuf is request mbuf, not response\n");
         return 0;
     } else if (arp_hdr->arp_opcode != 512) {
         printf("Unrecognized ARP Opcode\n");
@@ -124,7 +124,7 @@ rte_arp_consume_mbuf(struct rte_arp_table* arp_table, struct rte_mbuf* mbuf) {
     // Sender IP: arp_data.arp_sip;
     // Sender Mac Address: arp_data.arp_sha
  
-    // printf("Sender IP Address: %s, %d\n", inet_ntoa(sip_addr), arp_data.arp_sip); 
+    printf("Sender IP Address: %s, %d\n", inet_ntoa(sip_addr), arp_data.arp_sip); 
     // printf("Sender MAC Address: "); 
     // for (int i = 0; i < RTE_ETHER_ADDR_LEN; i++) {
         // printf("%x", (int) arp_data.arp_sha.addr_bytes[i]); 

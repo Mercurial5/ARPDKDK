@@ -1,11 +1,11 @@
-#ifndef ARP_H
-#define ARP_H
+#ifndef ARP_CACHE_H
+#define ARP_CACHE_H
 
 #include <inttypes.h>
 
 #include <rte_mbuf_core.h>
 
-struct rte_arp_table {
+struct arp_cache_table {
     struct rte_hash* table;
 };
 
@@ -17,7 +17,7 @@ struct rte_arp_table {
  * @return
  *   ARP Table structure
  */
-struct rte_arp_table* rte_arp_table_init(int entries);
+struct arp_cache_table* arp_cache_table_init(int entries);
 
 /**
  * Lookup an ipv4 in ARP Table and return MAC Address
@@ -30,7 +30,7 @@ struct rte_arp_table* rte_arp_table_init(int entries);
  *   - MAC Address
  *   - NULL if given ip does not exists in ARP Table
  */
-struct rte_ether_addr* rte_arp_lookup(struct rte_arp_table* arp_table, uint32_t ipv4);
+struct rte_ether_addr* arp_cache_lookup(struct arp_cache_table* arp_table, uint32_t ipv4);
 
 /**
  * Generate an mbuf for ARP request
@@ -47,7 +47,7 @@ struct rte_ether_addr* rte_arp_lookup(struct rte_arp_table* arp_table, uint32_t 
  *   - mbuf for ARP request
  *   - NULL if failed to allocate an mbuf
  */
-struct rte_mbuf* rte_arp_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t sipv4, uint32_t tipv4);
+struct rte_mbuf* arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t sipv4, uint32_t tipv4);
 
 /**
  * Consume mbuf and add Mac Address to arp_table.
@@ -65,6 +65,6 @@ struct rte_mbuf* rte_arp_generate_mbuf(struct rte_mempool* mempool, uint16_t por
  *   - Given ARP packet has unrecognized opcode
  *   - Failed to add MAC Address to the table
  */
-int rte_arp_consume_mbuf(struct rte_arp_table* arp_table, struct rte_mbuf* mbuf);
+int arp_cache_consume_mbuf(struct arp_cache_table* arp_table, struct rte_mbuf* mbuf);
 
 #endif

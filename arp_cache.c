@@ -29,7 +29,7 @@ arp_cache_lookup(struct arp_cache_table* arp_table, uint32_t ipv4) {
     struct rte_ether_addr* addr;
     int result = rte_hash_lookup_data(arp_table->table, &ipv4, (void**)&addr);
     if (result < 0) {
-       // printf("Failed to lookup data: %d\n", result);
+       printf("Failed to lookup data: %d\n", result);
        return NULL;
     }
 
@@ -102,7 +102,7 @@ arp_cache_consume_mbuf(struct arp_cache_table* arp_table, struct rte_mbuf* mbuf)
     struct rte_ether_hdr* eth_hdr;
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
     if (eth_hdr->ether_type != 1544) {
-        // printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
+        printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
         return 0;
     }
 
@@ -110,7 +110,7 @@ arp_cache_consume_mbuf(struct arp_cache_table* arp_table, struct rte_mbuf* mbuf)
     struct rte_arp_ipv4 arp_data = arp_hdr->arp_data;
 
     if (arp_hdr->arp_opcode == 256) {
-        // printf("Given ARP mbuf is request mbuf, not response\n");
+        printf("Given ARP mbuf is request mbuf, not response\n");
         return 0;
     } else if (arp_hdr->arp_opcode != 512) {
         printf("Unrecognized ARP Opcode\n");

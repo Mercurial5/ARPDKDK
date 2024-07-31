@@ -33,7 +33,7 @@ int lcore_reader(void *arg) {
     }
 
     for (int i = 0; i < 256; i++) {
-        struct rte_ether_addr *addr = arp_cache_lookup(arp_table, ips_to_lookup[i]);
+        struct rte_ether_addr *addr = arp_cache_lookup(arp_table, ips_to_lookup[i], PORT_ID);
         if (addr == NULL) {
             continue;
         } else {

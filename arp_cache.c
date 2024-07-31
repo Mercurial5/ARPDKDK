@@ -12,6 +12,11 @@
 bool arp_cache_force_quit;
 struct rte_ether_addr ETHER_BROADCAST = {{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }};
 
+struct arp_cache_hash_key {
+    uint32_t ipv4;
+    uint16_t port_id;
+};
+
 struct arp_cache*
 arp_cache_init(int entries) {
     struct arp_cache* arp_cache;
@@ -21,7 +26,7 @@ arp_cache_init(int entries) {
 
     parameters.name = "arp_cache_table";
     parameters.entries = entries;
-    parameters.key_len = sizeof(uint32_t);
+    parameters.key_len = sizeof(struct arp_cache_hash_key);
     parameters.hash_func = rte_jhash;
     parameters.hash_func_init_val = 0;
     parameters.socket_id = rte_socket_id();
@@ -32,9 +37,14 @@ arp_cache_init(int entries) {
 }
 
 struct rte_ether_addr*
-arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4) {
+arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4, uint16_t port_id) {
+    struct arp_cache_hash_key hash_key;
     struct rte_ether_addr* addr;
-    int result = rte_hash_lookup_data(arp_cache->data, &ipv4, (void**)&addr);
+
+    hash_key.ipv4 = ipv4;
+    hash_key.port_id = port_id;
+
+    int result = rte_hash_lookup_data(arp_cache->data, &hash_key, (void**)&addr);
     if (result < 0) {
         // printf("Failed to lookup data: %d\n", result);
         return NULL;
@@ -108,11 +118,12 @@ arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t 
 }
 
 int
-arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf) {
+arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint16_t port_id) {
     struct rte_ether_hdr* eth_hdr;
     struct rte_arp_hdr* arp_hdr;
     struct rte_arp_ipv4 arp_data;
     struct rte_ether_addr* addr;
+    struct arp_cache_hash_key hash_key;
     int result;
 
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
@@ -135,8 +146,10 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf) {
     // Copy address so it won't be deleted
     addr = malloc(sizeof(struct rte_ether_addr));
     *addr = arp_data.arp_sha;
-
-    result = rte_hash_add_key_data(arp_cache->data, &arp_data.arp_sip, &(*addr)); 
+    
+    hash_key.ipv4 = arp_data.arp_sip;
+    hash_key.port_id = port_id;
+    result = rte_hash_add_key_data(arp_cache->data, &hash_key, &(*addr)); 
 
     if (result != 0) {
         printf("Failed ot add data to table\n");
@@ -157,7 +170,7 @@ int arp_cache_lcore_reader(void *arg) {
             continue;
         }
         for (uint16_t i = 0; i < nb_rx; i++) {
-            arp_cache_consume_mbuf(arp_cache_reader->arp_cache, packets[i]);
+            arp_cache_consume_mbuf(arp_cache_reader->arp_cache, packets[i], arp_cache_reader->port_id);
         }
         rte_pktmbuf_free_bulk(packets, nb_rx); 
     }

@@ -50,7 +50,7 @@ arp_cache_init(int entries);
  *   - NULL if given ip does not exists in ARP Cache
  */
 struct rte_ether_addr *
-arp_cache_lookup(struct arp_cache *arp_cache, uint32_t ipv4);
+arp_cache_lookup(struct arp_cache *arp_cache, uint32_t ipv4, uint16_t port_id);
 
 /**
  * Generate an mbuf for ARP request
@@ -78,6 +78,8 @@ arp_cache_generate_mbuf(struct rte_mempool *mempool, uint16_t port_id,
  *   ARP Cache
  * @param mbuf
  *   Mbuf packet of ARP request
+ * @param port_id
+ *   PORT_ID of the device
  * @return
  *   On success - 1
  *   On error - 0
@@ -88,7 +90,7 @@ arp_cache_generate_mbuf(struct rte_mempool *mempool, uint16_t port_id,
  *   - Failed to add MAC Address to the table
  */
 int 
-arp_cache_consume_mbuf(struct arp_cache *arp_cache, struct rte_mbuf *mbuf);
+arp_cache_consume_mbuf(struct arp_cache *arp_cache, struct rte_mbuf *mbuf, uint16_t port_id);
 
 /**
  * Start an lcore to read packets and call arp_cache_consume_mbuf on every packet.

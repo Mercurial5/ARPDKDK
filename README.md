@@ -38,9 +38,10 @@ When you receive an ARP response, you can save it's entries to ARP Cache using `
 ```
 int result;
 struct arp_cache* arp_cache;
-struct rte_mbuf* mbuf
+struct rte_mbuf* mbuf;
+uint16_t port_id;
 
-result = arp_cache_consume_mbuf(arp_cache, mbuf);
+result = arp_cache_consume_mbuf(arp_cache, mbuf, port_id);
 if (result == 1) {
     printf("Successfully consumed an mbuf\n");
 }
@@ -53,9 +54,10 @@ After consuming ARP mbuf, you can lookup MAC Address of desired IP:
 ```
 struct arp_cache* arp_cache;
 uint32_t ipv4;
+uint16_t port_id;
 
 rte_ether_addr* addr;
-addr = arp_cache_lookup(arp_cache, ipv4);
+addr = arp_cache_lookup(arp_cache, ipv4, port_id);
 if (addr == NULL) {
     printf("Given address does not yet exists in ARP cache\n");
 }

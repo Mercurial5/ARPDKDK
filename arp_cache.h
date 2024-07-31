@@ -7,41 +7,48 @@
 
 extern bool arp_cache_force_quit;
 
-struct arp_cache_data {
-    struct rte_hash* table;
-    int entries;
+struct arp_cache {
+    struct rte_hash* data;
 };
 
-struct arp_cache {
-    struct rte_mempool* mempool;
-    struct arp_cache_data* data;
+struct arp_cache_reader {
+    struct arp_cache *arp_cache;
     int port_id;
-    int max_pkt_burst;  /**< Max number of packets to receive */ 
+    int queue_id;
+    int max_pkt_burst;
+};
+
+struct arp_cache_writer {
+    struct rte_mempool* mempool;
+    int port_id;
+    int queue_id;
     uint32_t sipv4;
+    uint32_t *tipv4;
+    int tipv4_size;
 };
 
 /**
- * Initialize ARP Table
+ * Initialize ARP Cache
  *
  * @param entries
- *   Number of entries in ARP Table
+ *   Number of entries in ARP Cache
  * @return
- *   ARP Table structure
+ *   ARP Cache structure
  */
-struct arp_cache* arp_cache_init(struct rte_mempool* mempool, int port_id, int max_pkt_burst, int entries, uint32_t ipv4);
+struct arp_cache* arp_cache_init(int entries);
 
 /**
- * Lookup an ipv4 in ARP Table and return MAC Address
+ * Lookup an ipv4 in ARP Cache and return MAC Address
  *
- * @param arp_table
- *   ARP Table structure
+ * @param arp_cache
+ *   ARP Cache structure
  * @param ipv4
  *   IP Address of desired MAC Address
  * @return
  *   - MAC Address
- *   - NULL if given ip does not exists in ARP Table
+ *   - NULL if given ip does not exists in ARP Cache
  */
-struct rte_ether_addr* arp_cache_lookup(struct arp_cache_data* arp_table, uint32_t ipv4);
+struct rte_ether_addr* arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4);
 
 /**
  * Generate an mbuf for ARP request
@@ -63,8 +70,8 @@ struct rte_mbuf* arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t p
 /**
  * Consume mbuf and add Mac Address to arp_table.
  *
- * @param arp_table
- *   ARP Table structure
+ * @param arp_cache
+ *   ARP Cache
  * @param mbuf
  *   Mbuf packet of ARP request
  * @return
@@ -76,13 +83,13 @@ struct rte_mbuf* arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t p
  *   - Given ARP packet has unrecognized opcode
  *   - Failed to add MAC Address to the table
  */
-int arp_cache_consume_mbuf(struct arp_cache_data* arp_table, struct rte_mbuf* mbuf);
+int arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf);
 
 /**
  * Start an lcore to read packets and call arp_cache_consume_mbuf on every packet.
  *
  * @param arg:
- *   pointer to struct arp_cache
+ *   pointer to struct arp_cache_reader
  * @return
  *   - 0 if arp_cache_force_quit is false end function is successfully ended
  */
@@ -93,7 +100,7 @@ int arp_cache_lcore_reader(void* arg);
  * Start an lcore to send ARP packets.
  *
  * @param arg:
- *   pointer to struct arp_cache
+ *   pointer to struct arp_cache_writer
  * @return
  *   - 0 when all arp packets are sent
  */

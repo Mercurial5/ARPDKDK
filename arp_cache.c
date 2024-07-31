@@ -12,36 +12,28 @@
 bool arp_cache_force_quit;
 
 struct arp_cache*
-arp_cache_init(struct rte_mempool* mempool, int port_id, int max_pkt_burst, int entries, uint32_t sipv4) {
+arp_cache_init(int entries) {
     struct arp_cache* arp_cache = malloc(sizeof(struct arp_cache));
 
     struct rte_hash_parameters parameters = { 0 };
-    parameters.name = "arp_table";
+    parameters.name = "arp_cache_table";
     parameters.entries = entries;
     parameters.key_len = sizeof(uint32_t);
     parameters.hash_func = rte_jhash;
     parameters.hash_func_init_val = 0;
     parameters.socket_id = rte_socket_id();
 
-    arp_cache->port_id = port_id;
-    arp_cache->max_pkt_burst = max_pkt_burst;
-
-    struct arp_cache_data* arp_data = malloc(sizeof(struct arp_cache_data));
-    arp_data->table = rte_hash_create(&parameters);
-    arp_data->entries = entries;
-    arp_cache->data = arp_data;
-    arp_cache->mempool = mempool;
-    arp_cache->sipv4 = sipv4;
+    arp_cache->data = rte_hash_create(&parameters);
 
     return arp_cache;
 }
 
 struct rte_ether_addr*
-arp_cache_lookup(struct arp_cache_data* arp_table, uint32_t ipv4) {
+arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4) {
     struct rte_ether_addr* addr;
-    int result = rte_hash_lookup_data(arp_table->table, &ipv4, (void**)&addr);
+    int result = rte_hash_lookup_data(arp_cache->data, &ipv4, (void**)&addr);
     if (result < 0) {
-        printf("Failed to lookup data: %d\n", result);
+        // printf("Failed to lookup data: %d\n", result);
         return NULL;
     }
 
@@ -111,11 +103,11 @@ arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t 
 }
 
 int
-arp_cache_consume_mbuf(struct arp_cache_data* arp_table, struct rte_mbuf* mbuf) {
+arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf) {
     struct rte_ether_hdr* eth_hdr;
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
     if (eth_hdr->ether_type != 1544) {
-        printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
+        // printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
         return 0;
     }
 
@@ -141,7 +133,7 @@ arp_cache_consume_mbuf(struct arp_cache_data* arp_table, struct rte_mbuf* mbuf) 
     struct rte_ether_addr* addr = malloc(sizeof(struct rte_ether_addr));
     *addr = arp_data.arp_sha;
 
-    int result = rte_hash_add_key_data(arp_table->table, &arp_data.arp_sip, &(*addr)); 
+    int result = rte_hash_add_key_data(arp_cache->data, &arp_data.arp_sip, &(*addr)); 
 
     if (result != 0) {
         printf("Failed ot add data to table\n");
@@ -152,20 +144,18 @@ arp_cache_consume_mbuf(struct arp_cache_data* arp_table, struct rte_mbuf* mbuf) 
 }
 
 int arp_cache_lcore_reader(void *arg) {
-    struct arp_cache* arp_cache = arg;
-    unsigned lcore_id = rte_lcore_id();
-    uint16_t queue_id = lcore_id - 1;
+    struct arp_cache_reader* arp_cache_reader = arg;
 
-    struct rte_mbuf *packets[ARP_CACHE_MAX_PKT_BURST];
+    struct rte_mbuf *packets[arp_cache_reader->max_pkt_burst];
     uint16_t nb_rx;
 
     while (!arp_cache_force_quit) {
-        nb_rx = rte_eth_rx_burst(arp_cache->port_id, queue_id, packets, ARP_CACHE_MAX_PKT_BURST);
+        nb_rx = rte_eth_rx_burst(arp_cache_reader->port_id, arp_cache_reader->queue_id, packets, arp_cache_reader->max_pkt_burst);
         if (nb_rx == 0) {
             continue;
         }
         for (uint16_t i = 0; i < nb_rx; i++) {
-            arp_cache_consume_mbuf(arp_cache->data, packets[i]);
+            arp_cache_consume_mbuf(arp_cache_reader->arp_cache, packets[i]);
         }
         rte_pktmbuf_free_bulk(packets, nb_rx); 
     }
@@ -174,23 +164,16 @@ int arp_cache_lcore_reader(void *arg) {
 }
 
 int arp_cache_lcore_writer(void* arg) {
-    struct arp_cache* arp_cache = arg;
-    unsigned lcore_id = rte_lcore_id();
-    uint16_t queue_id = lcore_id - 2;
+    struct arp_cache_writer* arp_cache_writer = arg;
 
-    uint32_t ipv4s[256];
-    for (int i = 0; i < 256; i++) {
-        ipv4s[i] = RTE_IPV4(192, 168, 247, i);
+    struct rte_mbuf* packets[arp_cache_writer->tipv4_size];
+    for (int i = 0; i < arp_cache_writer->tipv4_size; i++) {
+        packets[i] = arp_cache_generate_mbuf(arp_cache_writer->mempool, arp_cache_writer->port_id, arp_cache_writer->sipv4, arp_cache_writer->tipv4[i]);
     }
 
-    struct rte_mbuf* packets[256];
-    for (int i = 0; i < 256; i++) {
-        packets[i] = arp_cache_generate_mbuf(arp_cache->mempool, arp_cache->port_id, arp_cache->sipv4, ipv4s[i]);
-    }
-
-    uint16_t nb_tx; 
-    nb_tx = rte_eth_tx_burst(arp_cache->port_id, queue_id, packets, 256);
-    if (nb_tx != 256) {
+    uint16_t nb_tx;
+    nb_tx = rte_eth_tx_burst(arp_cache_writer->port_id, arp_cache_writer->queue_id, packets, arp_cache_writer->tipv4_size);
+    if (nb_tx != arp_cache_writer->tipv4_size) {
         printf("Failed to send packet: %d\n", nb_tx);
     }
 

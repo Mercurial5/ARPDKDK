@@ -17,7 +17,7 @@ struct arp_cache {
     struct arp_cache_data* data;
     int port_id;
     int max_pkt_burst;  /**< Max number of packets to receive */ 
-    uint32_t ipv4;
+    uint32_t sipv4;
 };
 
 /**

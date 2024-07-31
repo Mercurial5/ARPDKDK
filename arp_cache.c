@@ -12,12 +12,12 @@
 bool arp_cache_force_quit;
 
 struct arp_cache*
-arp_cache_init(struct rte_mempool* mempool, int port_id, int max_pkt_burst, int entries, uint32_t ipv4) {
+arp_cache_init(struct rte_mempool* mempool, int port_id, int max_pkt_burst, int entries, uint32_t sipv4) {
     struct arp_cache* arp_cache = malloc(sizeof(struct arp_cache));
 
     struct rte_hash_parameters parameters = { 0 };
     parameters.name = "arp_table";
-    parameters.entries = entries; 
+    parameters.entries = entries;
     parameters.key_len = sizeof(uint32_t);
     parameters.hash_func = rte_jhash;
     parameters.hash_func_init_val = 0;
@@ -31,7 +31,7 @@ arp_cache_init(struct rte_mempool* mempool, int port_id, int max_pkt_burst, int 
     arp_data->entries = entries;
     arp_cache->data = arp_data;
     arp_cache->mempool = mempool;
-    arp_cache->ipv4 = ipv4;
+    arp_cache->sipv4 = sipv4;
 
     return arp_cache;
 }
@@ -185,7 +185,7 @@ int arp_cache_lcore_writer(void* arg) {
 
     struct rte_mbuf* packets[256];
     for (int i = 0; i < 256; i++) {
-        packets[i] = arp_cache_generate_mbuf(arp_cache->mempool, arp_cache->port_id, arp_cache->ipv4, ipv4s[i]);
+        packets[i] = arp_cache_generate_mbuf(arp_cache->mempool, arp_cache->port_id, arp_cache->sipv4, ipv4s[i]);
     }
 
     uint16_t nb_tx; 

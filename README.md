@@ -4,7 +4,7 @@ This is a library that implements ARP request using DPDK.
 
 ## Getting started
 
-> Note: working example is written in main.c
+> Note: working example is written in main.c and requires 3 lcores.
 
 ### Initializing APR Table
 

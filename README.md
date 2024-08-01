@@ -56,9 +56,11 @@ struct arp_cache* arp_cache;
 uint32_t ipv4;
 uint16_t port_id;
 
-rte_ether_addr* addr;
-addr = arp_cache_lookup(arp_cache, ipv4, port_id);
-if (addr == NULL) {
+uint8_t[6] addr;
+bool error = false;
+
+arp_cache_lookup(arp_cache, ipv4, port_id, addr, error);
+if (error) {
     printf("Given address does not yet exists in ARP cache\n");
 }
 ```

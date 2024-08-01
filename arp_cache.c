@@ -17,6 +17,22 @@ struct arp_cache_hash_key {
     uint16_t port_id;
 };
 
+uint64_t arp_cache_serialize_addr(uint8_t addr[6]) {
+    uint64_t serialized = 0;
+
+    for (int i = 0; i < 6; i++) {
+        serialized += (uint64_t)addr[i] << (i * 8);
+    }
+
+    return serialized;
+}
+
+void arp_cache_deserialize_addr(uint64_t addr, uint8_t* deserialized) {
+    for (int i = 5; i >= 0; i--) {
+        deserialized[i] = addr >> (i * 8);
+    }
+}
+
 struct arp_cache*
 arp_cache_init(int entries) {
     struct arp_cache* arp_cache;
@@ -36,21 +52,23 @@ arp_cache_init(int entries) {
     return arp_cache;
 }
 
-struct rte_ether_addr*
-arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4, uint16_t port_id) {
+void
+arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4, uint16_t port_id, uint8_t* addr, bool *error) {
     struct arp_cache_hash_key hash_key;
-    struct rte_ether_addr* addr;
+    int result;
+    uint64_t data;
 
     hash_key.ipv4 = ipv4;
     hash_key.port_id = port_id;
 
-    int result = rte_hash_lookup_data(arp_cache->data, &hash_key, (void**)&addr);
+    result = rte_hash_lookup_data(arp_cache->data, &hash_key, (void**)&data);
     if (result < 0) {
         // printf("Failed to lookup data: %d\n", result);
-        return NULL;
+        *error = true;
+        return;
     }
-
-    return addr;
+    
+    arp_cache_deserialize_addr(data, addr);
 }
 
 struct rte_mbuf*
@@ -125,6 +143,7 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
     struct rte_ether_addr* addr;
     struct arp_cache_hash_key hash_key;
     int result;
+    uint64_t serialized;
 
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
     if (eth_hdr->ether_type != 1544) {
@@ -143,13 +162,11 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
         return 0;
     }
   
-    // Copy address so it won't be deleted
-    addr = malloc(sizeof(struct rte_ether_addr));
-    *addr = arp_data.arp_sha;
+    serialized = arp_cache_serialize_addr(arp_data.arp_sha.addr_bytes);
     
     hash_key.ipv4 = arp_data.arp_sip;
     hash_key.port_id = port_id;
-    result = rte_hash_add_key_data(arp_cache->data, &hash_key, &(*addr)); 
+    result = rte_hash_add_key_data(arp_cache->data, &hash_key, (void*)serialized); 
 
     if (result != 0) {
         printf("Failed ot add data to table\n");

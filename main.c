@@ -12,8 +12,8 @@
 #define PORT_ID 0
 #define IP_1 192
 #define IP_2 168
-#define IP_3 0
-#define IP_4 14
+#define IP_3 247
+#define IP_4 125
 
 void signal_handler(int signum) {
     if (signum == SIGINT || signum == SIGTERM) {
@@ -33,8 +33,10 @@ int lcore_reader(void *arg) {
     }
 
     for (int i = 0; i < 256; i++) {
-        struct rte_ether_addr *addr = arp_cache_lookup(arp_table, ips_to_lookup[i], PORT_ID);
-        if (addr == NULL) {
+        uint8_t addr[6];
+        bool error = false;
+        arp_cache_lookup(arp_table, ips_to_lookup[i], PORT_ID, addr, &error);
+        if (error) {
             continue;
         } else {
             struct in_addr ip_addr;
@@ -43,7 +45,7 @@ int lcore_reader(void *arg) {
             printf("IP Address (%d): %s\n", lcore_id, inet_ntoa(ip_addr)); 
             printf("MAC Address (%d): ", lcore_id); 
             for (int i = 0; i < RTE_ETHER_ADDR_LEN; i++) {
-                printf("%x", (int) addr->addr_bytes[i]); 
+                printf("%x", (int) addr[i]); 
                 if (i != RTE_ETHER_ADDR_LEN - 1) {
                     printf(":");
                 }

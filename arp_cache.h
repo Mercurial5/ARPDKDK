@@ -45,12 +45,13 @@ arp_cache_init(int entries);
  *   ARP Cache structure
  * @param ipv4
  *   IP Address of desired MAC Address
- * @return
- *   - MAC Address
- *   - NULL if given ip does not exists in ARP Cache
+ * @param addr
+ *   Return object of type uint8_t[6] where MAC Address will be saved
+ * @param error
+ *   Return object, If true, then the function failed
  */
-struct rte_ether_addr *
-arp_cache_lookup(struct arp_cache *arp_cache, uint32_t ipv4, uint16_t port_id);
+void
+arp_cache_lookup(struct arp_cache *arp_cache, uint32_t ipv4, uint16_t port_id, uint8_t* addr, bool *error);
 
 /**
  * Generate an mbuf for ARP request

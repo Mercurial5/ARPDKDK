@@ -17,7 +17,8 @@ struct arp_cache_hash_key {
     uint16_t port_id;
 };
 
-uint64_t arp_cache_serialize_addr(uint8_t addr[6]) {
+uint64_t
+arp_cache_serialize_addr(uint8_t addr[6]) {
     uint64_t serialized = 0;
 
     for (int i = 0; i < 6; i++) {
@@ -27,33 +28,66 @@ uint64_t arp_cache_serialize_addr(uint8_t addr[6]) {
     return serialized;
 }
 
-void arp_cache_deserialize_addr(uint64_t addr, uint8_t* deserialized) {
+void
+arp_cache_deserialize_addr(uint64_t addr, uint8_t* deserialized) {
     for (int i = 5; i >= 0; i--) {
         deserialized[i] = addr >> (i * 8);
     }
 }
 
-struct arp_cache*
-arp_cache_init(int entries) {
-    struct arp_cache* arp_cache;
-    struct rte_hash_parameters parameters;
+struct rte_hash *
+arp_cache_create_rte_hash(int entries) {
+    static int count = 0;
+    struct rte_hash *hash;
+    struct rte_hash_parameters parameters = { 0 };
+    char name[100];
 
-    arp_cache = malloc(sizeof(struct arp_cache));
+    sprintf(name, "arp_cache_table_%d", count++);
 
-    parameters.name = "arp_cache_table";
+    parameters.name = name;
     parameters.entries = entries;
     parameters.key_len = sizeof(struct arp_cache_hash_key);
     parameters.hash_func = rte_jhash;
     parameters.hash_func_init_val = 0;
     parameters.socket_id = rte_socket_id();
 
-    arp_cache->data = rte_hash_create(&parameters);
+    hash = rte_hash_create(&parameters);
+    return hash;
+}
+
+void
+arp_cache_copy_rte_hash(struct rte_hash *ihash, struct rte_hash *ohash) {
+    uint32_t iterator = 0;
+    int result;
+    uint32_t *key;
+    uint64_t data;
+
+    while (true) {
+        result = rte_hash_iterate(ihash, (void*)&key, (void**)&data, &iterator);
+        if (-result == ENOENT) {
+            break;
+        }
+
+        result = rte_hash_add_key_data(ohash, key, (void*)data);
+        if (result != 0) {
+            printf("Failed to copy data to rte_hash\n");
+        }
+    }
+}
+
+struct arp_cache*
+arp_cache_init(int entries) {
+    struct arp_cache* arp_cache;
+
+    arp_cache = malloc(sizeof(struct arp_cache));
+    arp_cache->data = arp_cache_create_rte_hash(entries);
+    arp_cache->size = entries;
 
     return arp_cache;
 }
 
-void
-arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4, uint16_t port_id, uint8_t* addr, bool *error) {
+int
+arp_cache_lookup(struct arp_cache_snapshot* snapshot, uint32_t ipv4, uint16_t port_id, uint8_t* addr) {
     struct arp_cache_hash_key hash_key;
     int result;
     uint64_t data;
@@ -61,14 +95,14 @@ arp_cache_lookup(struct arp_cache* arp_cache, uint32_t ipv4, uint16_t port_id, u
     hash_key.ipv4 = ipv4;
     hash_key.port_id = port_id;
 
-    result = rte_hash_lookup_data(arp_cache->data, &hash_key, (void**)&data);
+    result = rte_hash_lookup_data(snapshot->data, &hash_key, (void**)&data);
     if (result < 0) {
         // printf("Failed to lookup data: %d\n", result);
-        *error = true;
-        return;
+        return result;
     }
-    
+
     arp_cache_deserialize_addr(data, addr);
+    return 0;
 }
 
 struct rte_mbuf*
@@ -86,7 +120,7 @@ arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t 
         printf("Failed to allocate an mbuf\n");
         return NULL;
     }
-    
+
     rte_eth_macaddr_get(port_id, &cfg_ether_src);     
 
     // Create Ethernet header
@@ -161,9 +195,9 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
         printf("Unrecognized ARP Opcode\n");
         return 0;
     }
-  
+
     serialized = arp_cache_serialize_addr(arp_data.arp_sha.addr_bytes);
-    
+
     hash_key.ipv4 = arp_data.arp_sip;
     hash_key.port_id = port_id;
     result = rte_hash_add_key_data(arp_cache->data, &hash_key, (void*)serialized); 
@@ -210,5 +244,22 @@ int arp_cache_lcore_writer(void* arg) {
     }
 
     return 0;
+}
+
+struct arp_cache_snapshot * 
+arp_cache_take_snapshot(struct arp_cache *arp_cache) {
+    struct arp_cache_snapshot *snapshot;
+
+    snapshot = malloc(sizeof(struct arp_cache_snapshot));
+    snapshot->data = arp_cache_create_rte_hash(arp_cache->size);
+    arp_cache_copy_rte_hash(arp_cache->data, snapshot->data);
+
+    return snapshot;
+}
+
+void 
+arp_cache_free_snapshot(struct arp_cache_snapshot *to_free) {
+    rte_hash_free(to_free->data);
+    free(to_free);
 }
 

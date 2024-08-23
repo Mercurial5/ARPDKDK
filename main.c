@@ -12,7 +12,7 @@
 #define PORT_ID 0
 #define IP_1 192
 #define IP_2 168
-#define IP_3 247
+#define IP_3 2 
 #define IP_4 125
 
 void signal_handler(int signum) {
@@ -23,7 +23,8 @@ void signal_handler(int signum) {
 }
 
 int lcore_reader(void *arg) {
-    struct arp_cache *arp_table = arg;
+    struct arp_cache *arp_cache = arg;
+    struct arp_cache_snapshot* arp_cache_snapshot = arp_cache_take_snapshot(arp_cache);
     unsigned lcore_id = rte_lcore_id();
      
     uint32_t ips_to_lookup[256];
@@ -34,9 +35,8 @@ int lcore_reader(void *arg) {
 
     for (int i = 0; i < 256; i++) {
         uint8_t addr[6];
-        bool error = false;
-        arp_cache_lookup(arp_table, ips_to_lookup[i], PORT_ID, addr, &error);
-        if (error) {
+        int ret = arp_cache_lookup(arp_cache_snapshot, ips_to_lookup[i], PORT_ID, addr);
+        if (ret < 0) {
             continue;
         } else {
             struct in_addr ip_addr;
@@ -53,6 +53,8 @@ int lcore_reader(void *arg) {
             printf("\n");
         }
     }
+
+    arp_cache_free_snapshot(arp_cache_snapshot);
 
     return 0;
 }
@@ -103,7 +105,7 @@ int main(int argc, char **argv) {
         .queue_id = 0,
         .max_pkt_burst = 10
     };
-
+    
     rte_eal_remote_launch(arp_cache_lcore_reader, &arp_cache_reader, 1); 
 
     uint32_t sipv4 = RTE_IPV4(IP_1, IP_2, IP_3, IP_4);
@@ -121,10 +123,12 @@ int main(int argc, char **argv) {
         .tipv4 = tipv4,
         .tipv4_size = tipv4_size
     };
+
     rte_eal_remote_launch(arp_cache_lcore_writer, &arp_cache_writer, 2);
     rte_eal_wait_lcore(2);
 
     for (int i = 0; i < 100 && !arp_cache_force_quit; i++) {
+        printf("Requesting!\n");
         rte_eal_remote_launch(lcore_reader, arp_cache, 2); 
         rte_eal_remote_launch(lcore_reader, arp_cache, 3); 
         rte_eal_wait_lcore(2);
@@ -132,7 +136,7 @@ int main(int argc, char **argv) {
         sleep(5);
     }
 
-    rte_eal_wait_lcore(3);
+    rte_eal_wait_lcore(1);
 
     return 0;
 }

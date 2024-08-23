@@ -9,6 +9,11 @@ extern bool arp_cache_force_quit;
 
 struct arp_cache {
     struct rte_hash *data;
+    int size;
+};
+
+struct arp_cache_snapshot {
+    struct rte_hash *data;
 };
 
 struct arp_cache_reader {
@@ -41,17 +46,15 @@ arp_cache_init(int entries);
 /**
  * Lookup an ipv4 in ARP Cache and return MAC Address
  *
- * @param arp_cache
- *   ARP Cache structure
+ * @param snapshot
+ *   ARP Cache snapshot structure
  * @param ipv4
  *   IP Address of desired MAC Address
  * @param addr
  *   Return object of type uint8_t[6] where MAC Address will be saved
- * @param error
- *   Return object, If true, then the function failed
  */
-void
-arp_cache_lookup(struct arp_cache *arp_cache, uint32_t ipv4, uint16_t port_id, uint8_t* addr, bool *error);
+int
+arp_cache_lookup(struct arp_cache_snapshot *snapshot, uint32_t ipv4, uint16_t port_id, uint8_t* addr);
 
 /**
  * Generate an mbuf for ARP request
@@ -115,5 +118,28 @@ arp_cache_lcore_reader(void *arg);
  */
 int 
 arp_cache_lcore_writer(void *arg);
+
+/**
+ * Will create a new snapshot of the current state of ARP cache
+ * Every snapshot is unique, meaning this function will not 
+ * return same snapshot more than once. Snapshots that will not 
+ * be used should be freed with `arp_cache_free_snapshot`.
+ *
+ * @param arp_cache:
+ *   ARP Cache structure
+ * @return
+ *   pointer to the ARP cache snapshot
+ */
+struct arp_cache_snapshot * 
+arp_cache_take_snapshot(struct arp_cache *arp_cache);
+
+/**
+ * Will free snapshot that is no longer needed.
+ *
+ * @param to_free:
+ *   pointer to the arp_cache_structure that needs to be taken care of.
+ */
+void 
+arp_cache_free_snapshot(struct arp_cache_snapshot *to_free);
 
 #endif

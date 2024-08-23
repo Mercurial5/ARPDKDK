@@ -5,8 +5,6 @@
 
 #include <rte_mbuf_core.h>
 
-extern bool arp_cache_force_quit;
-
 struct arp_cache {
     struct rte_hash *data;
     int size;
@@ -141,5 +139,11 @@ arp_cache_take_snapshot(struct arp_cache *arp_cache);
  */
 void 
 arp_cache_free_snapshot(struct arp_cache_snapshot *to_free);
+
+/**
+ * Will stop every working threads
+ */
+void
+arp_cache_force_quit();
 
 #endif

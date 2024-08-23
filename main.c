@@ -15,10 +15,13 @@
 #define IP_3 2 
 #define IP_4 125
 
+bool force_quit;
+
 void signal_handler(int signum) {
     if (signum == SIGINT || signum == SIGTERM) {
         printf("\n\nSignal %d received, exiting\n", signum); 
-        arp_cache_force_quit = true;
+        arp_cache_force_quit();
+        force_quit = true;
     }
 }
 
@@ -127,8 +130,7 @@ int main(int argc, char **argv) {
     rte_eal_remote_launch(arp_cache_lcore_writer, &arp_cache_writer, 2);
     rte_eal_wait_lcore(2);
 
-    for (int i = 0; i < 100 && !arp_cache_force_quit; i++) {
-        printf("Requesting!\n");
+    for (int i = 0; i < 100 && !force_quit; i++) {
         rte_eal_remote_launch(lcore_reader, arp_cache, 2); 
         rte_eal_remote_launch(lcore_reader, arp_cache, 3); 
         rte_eal_wait_lcore(2);

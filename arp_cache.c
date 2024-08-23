@@ -9,7 +9,7 @@
 
 #define ARP_CACHE_MAX_PKT_BURST 10
 
-bool arp_cache_force_quit;
+bool arp_cache_force_quit_;
 struct rte_ether_addr ETHER_BROADCAST = {{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }};
 
 struct arp_cache_hash_key {
@@ -215,7 +215,7 @@ int arp_cache_lcore_reader(void *arg) {
     struct rte_mbuf *packets[arp_cache_reader->max_pkt_burst];
     uint16_t nb_rx;
 
-    while (!arp_cache_force_quit) {
+    while (!arp_cache_force_quit_) {
         nb_rx = rte_eth_rx_burst(arp_cache_reader->port_id, arp_cache_reader->queue_id, packets, arp_cache_reader->max_pkt_burst);
         if (nb_rx == 0) {
             continue;
@@ -262,4 +262,10 @@ arp_cache_free_snapshot(struct arp_cache_snapshot *to_free) {
     rte_hash_free(to_free->data);
     free(to_free);
 }
+
+void
+arp_cache_force_quit() {
+    arp_cache_force_quit_ = true;
+}
+
 

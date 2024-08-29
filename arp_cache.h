@@ -83,8 +83,10 @@ arp_cache_generate_mbuf(struct rte_mempool *mempool, uint16_t port_id,
  * @param port_id
  *   PORT_ID of the device
  * @return
- *   On success - 1
- *   On error - 0
+ *   0 - If consumed successfully
+ *   -ENOMSG - If given mbuf is not ARP Response packet
+ *   -ENOSPC - No space in hash
+ *   -EINVAL - Error while adding to hash
  *   Possible errors:
  *   - Given mbuf is not an ARP request
  *   - Given ARP packet has opcode of a request, not response

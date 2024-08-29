@@ -1,13 +1,12 @@
 #include <stdlib.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include <rte_ethdev.h>
 #include <rte_hash.h>
 #include <rte_jhash.h>
 
 #include "arp_cache.h"
-
-#define ARP_CACHE_MAX_PKT_BURST 10
 
 bool arp_cache_force_quit_;
 struct rte_ether_addr ETHER_BROADCAST = {{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }};
@@ -97,7 +96,6 @@ arp_cache_lookup(struct arp_cache_snapshot* snapshot, uint32_t ipv4, uint16_t po
 
     result = rte_hash_lookup_data(snapshot->data, &hash_key, (void**)&data);
     if (result < 0) {
-        // printf("Failed to lookup data: %d\n", result);
         return result;
     }
 
@@ -131,29 +129,17 @@ arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t 
 
     // Create ARP header
     arp_hdr = (struct rte_arp_hdr *) (eth_hdr + 1);
-
-    // arp_hdr->arp_hardware = RTE_ARP_HRD_ETHER;
     arp_hdr->arp_hardware = rte_cpu_to_be_16(RTE_ARP_HRD_ETHER);
-
-    // arp_hdr->arp_protocol = RTE_ETHER_TYPE_IPV4;
-    arp_hdr->arp_protocol = 8;
+    arp_hdr->arp_protocol = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
     arp_hdr->arp_hlen = RTE_ETHER_ADDR_LEN;
-
-    /* 
-     * This field should equal to 4 bytes. RTE_ETHER_CRC_LEN is also 4 bytes,
-     * but is the meaning correct? 
-     */
-    arp_hdr->arp_plen = RTE_ETHER_CRC_LEN;
-
-    // arp_hdr->arp_opcode = RTE_ARP_OP_REQUEST;
-    arp_hdr->arp_opcode = 256;
-
-
+    arp_hdr->arp_plen = 4;
+    arp_hdr->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REQUEST);
+    
+    // Create arp data
     arp_data.arp_sha = cfg_ether_src;
     arp_data.arp_sip = rte_cpu_to_be_32(sipv4);
     arp_data.arp_tha = arp_tha;
     arp_data.arp_tip = rte_cpu_to_be_32(tipv4);
-
     arp_hdr->arp_data = arp_data;
 
     pkt_size = sizeof(struct rte_ether_hdr) + sizeof(struct rte_arp_hdr);
@@ -162,7 +148,6 @@ arp_cache_generate_mbuf(struct rte_mempool* mempool, uint16_t port_id, uint32_t 
     pkt->pkt_len = pkt_size;
     pkt->l2_len = sizeof(struct rte_ether_hdr);
     pkt->l3_len = sizeof(struct rte_arp_hdr);
-
     pkt->data_len = pkt_size;
     pkt->pkt_len = pkt_size;
 
@@ -180,20 +165,22 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
     uint64_t serialized;
 
     eth_hdr = rte_pktmbuf_mtod(mbuf, struct rte_ether_hdr*);
-    if (eth_hdr->ether_type != 1544) {
-        // printf("Not an ARP packet: %d\n", eth_hdr->ether_type);
-        return 0;
+
+    // Not an ARP packet
+    if (eth_hdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_ARP)) {
+        return -ENOMSG;
     }
 
     arp_hdr = (struct rte_arp_hdr*)(eth_hdr + 1);
     arp_data = arp_hdr->arp_data;
-
-    if (arp_hdr->arp_opcode == 256) {
-        printf("Given ARP mbuf is request mbuf, not response\n");
-        return 0;
-    } else if (arp_hdr->arp_opcode != 512) {
-        printf("Unrecognized ARP Opcode\n");
-        return 0;
+    
+    // Given ARP mbuf is request mbuf, not response
+    if (arp_hdr->arp_opcode == rte_cpu_to_be_16(RTE_ARP_OP_REQUEST)) {
+        return -ENOMSG;
+    }
+    // Unrecognized ARP Opcode
+    else if (arp_hdr->arp_opcode != rte_cpu_to_be_16(RTE_ARP_OP_REPLY)) {
+        return -ENOMSG;
     }
 
     serialized = arp_cache_serialize_addr(arp_data.arp_sha.addr_bytes);
@@ -203,11 +190,10 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
     result = rte_hash_add_key_data(arp_cache->data, &hash_key, (void*)serialized); 
 
     if (result != 0) {
-        printf("Failed ot add data to table\n");
-        return 0;
+        return result;
     }
 
-    return 1;
+    return 0;
 }
 
 int arp_cache_lcore_reader(void *arg) {

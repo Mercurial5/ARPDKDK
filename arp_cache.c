@@ -1,6 +1,8 @@
+#include <unistd.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include <rte_ethdev.h>
 #include <rte_hash.h>
@@ -10,6 +12,7 @@
 
 bool arp_cache_force_quit_;
 struct rte_ether_addr ETHER_BROADCAST = {{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }};
+pthread_mutex_t ip_priority_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct arp_cache_hash_key {
     uint32_t ipv4;
@@ -83,6 +86,13 @@ arp_cache_init(int entries) {
     arp_cache->size = entries;
 
     return arp_cache;
+}
+
+struct arp_cache_ipv4 arp_cache_create_ipv4(uint32_t ipv4) {
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    struct arp_cache_ipv4 arp_cache_ipv4 = { .ipv4 = ipv4, .mutex=mutex, .top = 1, .current = 0 };
+
+    return arp_cache_ipv4;
 }
 
 int
@@ -184,10 +194,10 @@ arp_cache_consume_mbuf(struct arp_cache* arp_cache, struct rte_mbuf* mbuf, uint1
     }
 
     serialized = arp_cache_serialize_addr(arp_data.arp_sha.addr_bytes);
-
+      
     hash_key.ipv4 = arp_data.arp_sip;
     hash_key.port_id = port_id;
-    result = rte_hash_add_key_data(arp_cache->data, &hash_key, (void*)serialized); 
+    result = rte_hash_add_key_data(arp_cache->data, &hash_key, (void*)serialized);
 
     if (result != 0) {
         return result;
@@ -219,14 +229,40 @@ int arp_cache_lcore_writer(void* arg) {
     struct arp_cache_writer* arp_cache_writer = arg;
     struct rte_mbuf* packets[arp_cache_writer->tipv4_size];
     uint16_t nb_tx;
+    uint16_t index;
 
-    for (int i = 0; i < arp_cache_writer->tipv4_size; i++) {
-        packets[i] = arp_cache_generate_mbuf(arp_cache_writer->mempool, arp_cache_writer->port_id, arp_cache_writer->sipv4, arp_cache_writer->tipv4[i]);
-    }
+    while (!arp_cache_force_quit_) {
+        nb_tx = 0;
+        index = 0;
 
-    nb_tx = rte_eth_tx_burst(arp_cache_writer->port_id, arp_cache_writer->queue_id, packets, arp_cache_writer->tipv4_size);
-    if (nb_tx != arp_cache_writer->tipv4_size) {
-        printf("Failed to send packet: %d\n", nb_tx);
+        for (int i = 0; i < arp_cache_writer->tipv4_size; i++) {
+            struct arp_cache_ipv4 *tipv4 = &arp_cache_writer->tipv4[i];
+
+            if (tipv4->current != tipv4->top) {
+                tipv4->current++;
+                continue;
+            }
+
+            packets[index++] = arp_cache_generate_mbuf(arp_cache_writer->mempool, arp_cache_writer->port_id, arp_cache_writer->sipv4, tipv4->ipv4);
+            
+            pthread_mutex_lock(&tipv4->mutex);
+            tipv4->current = 0;
+            if (tipv4->top >= 128) {
+                tipv4->top = 255;
+            } else {
+                tipv4->top *= 2;
+            }
+            pthread_mutex_unlock(&tipv4->mutex);
+        }
+
+        if (index != 0) {
+            nb_tx = rte_eth_tx_burst(arp_cache_writer->port_id, arp_cache_writer->queue_id, packets, index);
+            if (nb_tx != arp_cache_writer->tipv4_size) {
+                printf("Failed to send packet: %d\n", nb_tx);
+            }
+        }
+
+        sleep(arp_cache_writer->delay);
     }
 
     return 0;

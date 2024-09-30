@@ -2,12 +2,20 @@
 #define ARP_CACHE_H
 
 #include <inttypes.h>
+#include <pthread.h>
 
 #include <rte_mbuf_core.h>
 
 struct arp_cache {
     struct rte_hash *data;
     int size;
+};
+
+struct arp_cache_ipv4 {
+    uint32_t ipv4;
+    pthread_mutex_t mutex;
+    uint8_t top;
+    uint8_t current;
 };
 
 struct arp_cache_snapshot {
@@ -19,6 +27,7 @@ struct arp_cache_reader {
     int port_id;
     int queue_id;
     int max_pkt_burst;
+    struct arp_cache_ipv4 *tipv4;
 };
 
 struct arp_cache_writer {
@@ -26,8 +35,9 @@ struct arp_cache_writer {
     int port_id;
     int queue_id;
     uint32_t sipv4;
-    uint32_t *tipv4;
+    struct arp_cache_ipv4 *tipv4;
     int tipv4_size;
+    uint8_t delay;
 };
 
 /**
@@ -40,6 +50,16 @@ struct arp_cache_writer {
  */
 struct arp_cache *
 arp_cache_init(int entries);
+
+/*
+ * Take IPv4 Address and create arp_cache_ipv4 struct
+ *
+ * @param ipv4
+ *   IPv4 address
+ * @return
+ *   arp_cache_ipv4 struct
+ */
+struct arp_cache_ipv4 arp_cache_create_ipv4(uint32_t ipv4);
 
 /**
  * Lookup an ipv4 in ARP Cache and return MAC Address

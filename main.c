@@ -12,8 +12,8 @@
 #define PORT_ID 0
 #define IP_1 192
 #define IP_2 168
-#define IP_3 2 
-#define IP_4 125
+#define IP_3 0
+#define IP_4 21
 
 bool force_quit;
 
@@ -113,32 +113,32 @@ int main(int argc, char **argv) {
 
     uint32_t sipv4 = RTE_IPV4(IP_1, IP_2, IP_3, IP_4);
     int tipv4_size = 256;
-    uint32_t tipv4[tipv4_size];
+    struct arp_cache_ipv4 tipv4[tipv4_size];
     for (int i = 0; i < tipv4_size; i++) {
-        tipv4[i] = RTE_IPV4(IP_1, IP_2, IP_3, i);
+        tipv4[i] = arp_cache_create_ipv4(RTE_IPV4(IP_1, IP_2, IP_3, i));
     }
     
+    printf("test\n");
     struct arp_cache_writer arp_cache_writer = {
         .mempool = mempool,
         .port_id = PORT_ID,
         .queue_id = 0,
         .sipv4 = sipv4,
         .tipv4 = tipv4,
-        .tipv4_size = tipv4_size
+        .tipv4_size = tipv4_size,
+        .delay = 1
     };
 
     rte_eal_remote_launch(arp_cache_lcore_writer, &arp_cache_writer, 2);
-    rte_eal_wait_lcore(2);
-
+    
     for (int i = 0; i < 100 && !force_quit; i++) {
-        rte_eal_remote_launch(lcore_reader, arp_cache, 2); 
         rte_eal_remote_launch(lcore_reader, arp_cache, 3); 
-        rte_eal_wait_lcore(2);
         rte_eal_wait_lcore(3);
         sleep(5);
     }
 
     rte_eal_wait_lcore(1);
+    rte_eal_wait_lcore(2);
 
     return 0;
 }
